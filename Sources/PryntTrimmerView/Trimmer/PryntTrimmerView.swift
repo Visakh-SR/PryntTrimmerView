@@ -68,6 +68,7 @@ public protocol TrimmerViewDelegate: AnyObject {
     private let rightHandleKnob = UIView()
     private let leftMaskView = UIView()
     private let rightMaskView = UIView()
+    private let geastureView = UIView()
 
     // MARK: Constraints
 
@@ -81,6 +82,9 @@ public protocol TrimmerViewDelegate: AnyObject {
 
     /// The minimum duration allowed for the trimming. The handles won't pan further if the minimum duration is attained.
     public var minDuration: Double = 3
+    
+    /// To enable trim swipe feature
+    public var enableTrimSeek: Bool = false
 
     // MARK: - View & constraints configurations
 
@@ -94,6 +98,7 @@ public protocol TrimmerViewDelegate: AnyObject {
         setupHandleView()
         setupMaskView()
         setupPositionBar()
+        setupGestureView()
         setupGestures()
         updateMainColor()
         updateHandleColor()
@@ -120,6 +125,22 @@ public protocol TrimmerViewDelegate: AnyObject {
         leftConstraint?.isActive = true
         rightConstraint?.isActive = true
     }
+    
+    private func setupGestureView() {
+        geastureView.layer.borderWidth = 2.0
+        geastureView.layer.cornerRadius = 2.0
+        geastureView.backgroundColor = .clear
+        geastureView.translatesAutoresizingMaskIntoConstraints = false
+        geastureView.isUserInteractionEnabled = true
+        addSubview(geastureView)
+        bringSubviewToFront(geastureView)
+
+        geastureView.topAnchor.constraint(equalTo: trimView.topAnchor).isActive = true
+        geastureView.bottomAnchor.constraint(equalTo: trimView.bottomAnchor).isActive = true
+        geastureView.leftAnchor.constraint(equalTo: trimView.leftAnchor).isActive = true
+        geastureView.rightAnchor.constraint(equalTo: trimView.rightAnchor).isActive = true
+    }
+
 
     private func setupHandleView() {
 
@@ -208,6 +229,9 @@ public protocol TrimmerViewDelegate: AnyObject {
         leftHandleView.addGestureRecognizer(leftPanGestureRecognizer)
         let rightPanGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(TrimmerView.handlePanGesture))
         rightHandleView.addGestureRecognizer(rightPanGestureRecognizer)
+        let panGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(TrimmerView.handlePanGesture))
+        geastureView.addGestureRecognizer(panGestureRecognizer)
+        
     }
 
     private func updateMainColor() {
@@ -229,31 +253,60 @@ public protocol TrimmerViewDelegate: AnyObject {
         switch gestureRecognizer.state {
 
         case .began:
-            if isLeftGesture {
+            if enableTrimSeek {
                 currentLeftConstraint = leftConstraint!.constant
-            } else {
-                currentRightConstraint = rightConstraint!.constant
+            }else {
+                if isLeftGesture {
+                    currentLeftConstraint = leftConstraint!.constant
+                } else {
+                    currentRightConstraint = rightConstraint!.constant
+                }
             }
             updateSelectedTime(stoppedMoving: false)
         case .changed:
             let translation = gestureRecognizer.translation(in: superView)
-            if isLeftGesture {
-                updateLeftConstraint(with: translation)
-            } else {
-                updateRightConstraint(with: translation)
+            if enableTrimSeek {
+                updateTrimViewConstraint(with: translation)
+                layoutIfNeeded()
+                if let startTime = startTime {
+                    seek(to: startTime)
+                }
+            }else {
+                if isLeftGesture {
+                    updateLeftConstraint(with: translation)
+                } else {
+                    updateRightConstraint(with: translation)
+                }
+                layoutIfNeeded()
+                if let startTime = startTime, isLeftGesture {
+                    seek(to: startTime)
+                } else if let endTime = endTime {
+                    seek(to: endTime)
+                }
             }
-            layoutIfNeeded()
-            if let startTime = startTime, isLeftGesture {
-                seek(to: startTime)
-            } else if let endTime = endTime {
-                seek(to: endTime)
-            }
+            
             updateSelectedTime(stoppedMoving: false)
 
         case .cancelled, .ended, .failed:
             updateSelectedTime(stoppedMoving: true)
         default: break
         }
+    }
+    
+    
+    /// Custom method to manage trimview constraint
+    /// - Parameter translation: Point on the superview
+    private func updateTrimViewConstraint(with translation: CGPoint) {
+        let xPos = translation.x + currentLeftConstraint
+        let maxLeftContraint = frame.width - trimView.frame.width
+        let newLeftContraint = min(
+            max(
+                0,
+                xPos - trimView.frame.width/2
+            ),
+            maxLeftContraint
+        )
+        leftConstraint?.constant = newLeftContraint
     }
 
     private func updateLeftConstraint(with translation: CGPoint) {
@@ -277,7 +330,16 @@ public protocol TrimmerViewDelegate: AnyObject {
 
     private func resetHandleViewPosition() {
         leftConstraint?.constant = 0
-        rightConstraint?.constant = 0
+        if enableTrimSeek {
+            let trimViewWidth = currentLeftConstraint + (handleWidth * 2) + minimumDistanceBetweenHandle
+            trimView.widthAnchor.constraint(equalToConstant: trimViewWidth).isActive = true
+            rightConstraint?.isActive = false
+            geastureView.isHidden = false
+        }else {
+            rightConstraint?.constant = 0
+            geastureView.isHidden = true
+        }
+        
         layoutIfNeeded()
     }
 
@@ -344,3 +406,4 @@ public protocol TrimmerViewDelegate: AnyObject {
         updateSelectedTime(stoppedMoving: false)
     }
 }
+
